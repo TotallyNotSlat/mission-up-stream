@@ -1,0 +1,32 @@
+name: Import Mission Up Stream website
+
+on:
+  push:
+    paths:
+      - "Mission_Up_Stream_Website_Source.zip"
+      - ".github/workflows/unpack-site.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Unpack website source
+        run: |
+          unzip -o Mission_Up_Stream_Website_Source.zip
+          rm Mission_Up_Stream_Website_Source.zip
+
+      - name: Commit website
+        run: |
+          git config user.name "Mission Up Stream Setup"
+          git config user.email "actions@github.com"
+          git add -A
+          git commit -m "Import Mission Up Stream website"
+          git push
