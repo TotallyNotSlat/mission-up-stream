@@ -1,0 +1,52 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "../vendor/shadcn-tailwind-4.13.0.css";
+
+:root {
+  --background:#07121d; --foreground:#eefbff; --card:#0d1d2c; --card-foreground:#eefbff;
+  --popover:#102233; --popover-foreground:#eefbff; --primary:#67e8f9;
+  --primary-foreground:#06121d; --secondary:#162a3d; --secondary-foreground:#e8f8ff;
+  --muted:#142536; --muted-foreground:#8da3b7; --accent:#19344a; --accent-foreground:#ecfeff;
+  --destructive:#fb7185; --border:#24394c; --input:#2a4054; --ring:#67e8f9;
+  --chart-1:#67e8f9; --chart-2:#34d399; --chart-3:#fcd34d; --chart-4:#a78bfa; --chart-5:#fb7185;
+  --radius:.9rem;
+}
+@theme inline {
+  --color-background:var(--background); --color-foreground:var(--foreground); --color-card:var(--card);
+  --color-card-foreground:var(--card-foreground); --color-popover:var(--popover);
+  --color-popover-foreground:var(--popover-foreground); --color-primary:var(--primary);
+  --color-primary-foreground:var(--primary-foreground); --color-secondary:var(--secondary);
+  --color-secondary-foreground:var(--secondary-foreground); --color-muted:var(--muted);
+  --color-muted-foreground:var(--muted-foreground); --color-accent:var(--accent);
+  --color-accent-foreground:var(--accent-foreground); --color-destructive:var(--destructive);
+  --color-border:var(--border); --color-input:var(--input); --color-ring:var(--ring);
+  --radius-sm:calc(var(--radius) - 4px); --radius-md:calc(var(--radius) - 2px);
+  --radius-lg:var(--radius); --radius-xl:calc(var(--radius) + 4px);
+  --font-sans:Arial,Helvetica,sans-serif; --font-display:Arial,Helvetica,sans-serif;
+}
+* { border-color:var(--border); }
+html { color-scheme:dark; }
+body { margin:0; background:var(--background); color:var(--foreground); font-family:Arial,Helvetica,sans-serif; font-size:16px; }
+button { cursor:pointer; }
+.font-display { font-family:Arial,Helvetica,sans-serif; }
+.pond-glow { z-index:0; opacity:.7; background:radial-gradient(circle at 74% 7%,rgba(34,211,238,.12),transparent 26%),radial-gradient(circle at 20% 70%,rgba(99,102,241,.07),transparent 34%); }
+.pond-card { position:relative; border:1px solid rgba(71,98,122,.42); border-radius:1.25rem; background:linear-gradient(145deg,rgba(16,36,53,.96),rgba(10,26,40,.93)); box-shadow:0 16px 45px rgba(0,0,0,.12); }
+.daily-card { border:1px solid rgba(103,232,249,.25); border-radius:1.25rem; background:linear-gradient(145deg,#123a4c,#102438 62%,#13243f); box-shadow:inset 0 1px rgba(255,255,255,.04),0 24px 70px rgba(5,18,29,.35); }
+.tourney-card { min-height:310px; border:1px solid rgba(71,98,122,.45); border-radius:1.25rem; padding:1.5rem; background:linear-gradient(145deg,rgba(17,38,56,.96),rgba(10,24,37,.96)); }
+.nav-pill { display:flex; flex:0 0 auto; align-items:center; gap:.7rem; border-radius:.85rem; padding:.72rem .8rem; color:#91a4b6; font-size:.9rem; font-weight:700; white-space:nowrap; transition:.2s; }
+.nav-pill:hover { background:rgba(30,58,78,.55); color:#d9faff; }
+.nav-pill-active { background:rgba(103,232,249,.12); color:#9af2ff; box-shadow:inset 3px 0 #67e8f9; }
+.eyebrow { margin:0; color:#67e8f9; font-size:.72rem; font-weight:800; letter-spacing:.16em; text-transform:uppercase; }
+.page-title { margin:.35rem 0 0; font-size:clamp(2rem,4vw,3.4rem); line-height:1.02; font-weight:900; letter-spacing:-.04em; }
+.section-title { margin:.25rem 0 0; font-size:1.45rem; font-weight:850; letter-spacing:-.025em; }
+.mini-stat { display:flex; min-height:116px; flex-direction:column; justify-content:flex-end; border:1px solid rgba(71,98,122,.42); border-radius:1rem; padding:1rem; background:rgba(21,42,60,.65); }
+.mini-stat svg { width:1.1rem; color:#67e8f9; margin-bottom:auto; }
+.mini-stat b { font-size:1.35rem; }
+.mini-stat span { color:#8196a9; font-size:.8rem; }
+.reward-card { border:1px solid currentColor; border-radius:1rem; padding:1.2rem; background:rgba(255,255,255,.025); }
+.reward-card b { display:block; margin-top:1.2rem; color:white; font-size:2.5rem; line-height:1; }
+.reward-card span { display:block; margin-top:.35rem; color:#91a4b6; font-size:.82rem; }
+.field-label { display:grid; gap:.45rem; color:#b9c8d4; font-size:.84rem; font-weight:700; }
+.field-label input,.field-label textarea { border-color:#2a4054; background:#091725; color:#eefbff; }
+@media (max-width:767px){ .nav-pill-active { box-shadow:inset 0 -2px #67e8f9; } }
+@media (prefers-reduced-motion:reduce){ * { scroll-behavior:auto!important; transition:none!important; animation:none!important; } }
