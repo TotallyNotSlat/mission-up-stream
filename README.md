@@ -1,6 +1,8 @@
 # Mission Up Stream
 
-Mission Up Stream is the live leaderboard and player-profile site for the fishing league. It reads public, Row Level Security-protected data from the existing Supabase tables `profiles`, `player_stats`, and `profile_rewards`, refreshing every 15 seconds.
+Mission Up Stream is the authenticated live leaderboard and player-profile site for the fishing league. It reads Row Level Security-protected data from Supabase, refreshing league, title, and tournament data every 15 seconds.
+
+Player identity remains in `profiles`, game totals in `player_stats`, and reward totals in `profile_rewards`. Titles use `title_definitions` and `player_titles`; opt-in tournament participation uses `tournaments` and `tournament_entries`. Account creation, title permissions, password resets, and irreversible tournament retirement run through JWT-protected Supabase Edge Functions. The service-role key is used only inside those functions and is never shipped to the browser.
 
 ## Render deployment
 

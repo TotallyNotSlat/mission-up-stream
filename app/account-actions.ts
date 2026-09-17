@@ -8,6 +8,9 @@ export type MyProfile = {
   avatarPath: string | null;
   avatarUrl: string | null;
   mustChangePassword: boolean;
+  activeTitleId: string | null;
+  titleIds: string[];
+  canManageTournaments: boolean;
 };
 
 export async function callAccountAction(body: Record<string, unknown>) {
@@ -20,7 +23,7 @@ export async function callAccountAction(body: Record<string, unknown>) {
 export async function fetchMyProfile(userId: string): Promise<MyProfile> {
   const { data, error } = await supabase
     .from("profiles")
-    .select("id,username,bio,status_text,avatar_path,must_change_password")
+    .select("id,username,bio,status_text,avatar_path,must_change_password,active_title_id")
     .eq("id", userId)
     .single();
   if (error) throw new Error(error.message);
@@ -29,6 +32,8 @@ export async function fetchMyProfile(userId: string): Promise<MyProfile> {
     const { data: signed } = await supabase.storage.from("profile-images").createSignedUrl(data.avatar_path, 3600);
     avatarUrl = signed?.signedUrl ?? null;
   }
+  const {data:assigned,error:titleError}=await supabase.from("player_titles").select("title_id,title_definitions!inner(can_manage_tournaments)").eq("player_id",userId);
+  if(titleError)throw new Error(titleError.message);
   return {
     id: data.id,
     username: data.username,
@@ -37,6 +42,9 @@ export async function fetchMyProfile(userId: string): Promise<MyProfile> {
     avatarPath: data.avatar_path,
     avatarUrl,
     mustChangePassword: Boolean(data.must_change_password),
+    activeTitleId:data.active_title_id,
+    titleIds:(assigned??[]).map(row=>row.title_id),
+    canManageTournaments:(assigned??[]).some(row=>Boolean((row.title_definitions as unknown as {can_manage_tournaments:boolean}).can_manage_tournaments)),
   };
 }
 
