@@ -17,19 +17,53 @@ Deno.serve(async(req:Request)=>{
     const caller=userData.user;if(userError||!caller)return json({error:"Your session is invalid or expired."},401);
     const body=await req.json(),action=String(body.action??"");
 
-    if(action==="schedule_tournament"){
+    const requireTournamentManager=async()=>{
       const [{data:adminRow},{data:titleRow}]=await Promise.all([
         db.from("league_admins").select("user_id").eq("user_id",caller.id).maybeSingle(),
         db.from("player_titles").select("title_definitions!inner(can_manage_tournaments)").eq("player_id",caller.id).eq("title_definitions.can_manage_tournaments",true).limit(1).maybeSingle(),
       ]);
-      if(!adminRow&&!titleRow)return json({error:"Tournament Tools access is required."},403);
+      if(!adminRow&&!titleRow)throw new Error("Tournament Tools access is required.");
+    };
+
+    const parseTournamentInput=()=>{
       const name=String(body.name??"").trim(),description=String(body.description??"").trim(),metric=String(body.metric??""),startsAt=new Date(String(body.starts_at??"")),endsAt=new Date(String(body.ends_at??""));
       if(name.length<3||name.length>80)throw new Error("Tournament name must be 3–80 characters.");
       if(description.length>500)throw new Error("Description must be 500 characters or fewer.");
       if(!metrics.has(metric))throw new Error("Choose a valid tournament metric.");
       if(Number.isNaN(startsAt.valueOf())||Number.isNaN(endsAt.valueOf())||endsAt<=startsAt)throw new Error("The tournament end must be after its start.");
-      const {data,error}=await db.from("tournaments").insert({name,description,metric,starts_at:startsAt.toISOString(),ends_at:endsAt.toISOString(),status:"scheduled",created_by:caller.id,timezone:String(body.timezone??"America/New_York")}).select("id").single();if(error)throw error;
+      return {name,description,metric,starts_at:startsAt.toISOString(),ends_at:endsAt.toISOString(),timezone:String(body.timezone??"America/New_York")};
+    };
+
+    if(action==="schedule_tournament"){
+      await requireTournamentManager();
+      const input=parseTournamentInput();
+      const {data,error}=await db.from("tournaments").insert({...input,status:"scheduled",created_by:caller.id}).select("id").single();if(error)throw error;
       return json({ok:true,tournament_id:data.id});
+    }
+
+    if(action==="update_tournament"){
+      await requireTournamentManager();
+      const tournamentId=String(body.tournament_id??"");if(!tournamentId)throw new Error("Tournament ID is required.");
+      const {data:before,error:beforeError}=await db.from("tournaments").select("id,name,description,metric,starts_at,ends_at,timezone").eq("id",tournamentId).single();if(beforeError)throw beforeError;
+      const input=parseTournamentInput();
+      const {count:activeEntries,error:entryError}=await db.from("tournament_entries").select("player_id",{count:"exact",head:true}).eq("tournament_id",tournamentId).in("state",["competing","retired"]);if(entryError)throw entryError;
+      if((activeEntries??0)>0&&(input.metric!==before.metric||input.starts_at!==new Date(before.starts_at).toISOString()))throw new Error("The metric and start time cannot change after a player has begun competing.");
+      const {error}=await db.from("tournaments").update(input).eq("id",tournamentId);if(error)throw error;
+      await db.from("admin_audit").insert({admin_user_id:caller.id,player_id:null,action:"tournament_updated",before_data:before,after_data:{id:tournamentId,...input},reason:"Tournament edited through Tournament Tools"});
+      return json({ok:true,tournament_id:tournamentId});
+    }
+
+    if(action==="delete_tournament"){
+      await requireTournamentManager();
+      const tournamentId=String(body.tournament_id??"");if(!tournamentId)throw new Error("Tournament ID is required.");
+      const {data:before,error:beforeError}=await db.from("tournaments").select("id,name,description,metric,starts_at,ends_at,timezone").eq("id",tournamentId).single();if(beforeError)throw beforeError;
+      const [{count:entryCount},{count:awardCount}]=await Promise.all([
+        db.from("tournament_entries").select("player_id",{count:"exact",head:true}).eq("tournament_id",tournamentId),
+        db.from("trophies").select("id",{count:"exact",head:true}).eq("tournament_id",tournamentId),
+      ]);
+      const {error}=await db.from("tournaments").delete().eq("id",tournamentId);if(error)throw error;
+      await db.from("admin_audit").insert({admin_user_id:caller.id,player_id:null,action:"tournament_deleted",before_data:{...before,entry_count:entryCount??0,award_count:awardCount??0},reason:"Tournament deleted through Tournament Tools"});
+      return json({ok:true,tournament_id:tournamentId,name:before.name});
     }
 
     const tournamentId=String(body.tournament_id??"");if(!tournamentId)throw new Error("Tournament ID is required.");

@@ -98,6 +98,22 @@ Deno.serve(async(req:Request)=>{
       return json({ok:true,home_headline:headline,home_copy:copy});
     }
 
+    if(action==="admin_publish_launcher"){
+      const versionLabel=String(body.version_label??"").trim(),releaseNotes=String(body.release_notes??"").trim(),filePath=String(body.file_path??""),fileName=String(body.file_name??"").trim(),fileSize=Math.max(0,Math.trunc(Number(body.file_size??0)));
+      if(versionLabel.length<1||versionLabel.length>40)throw new Error("The launcher version must be 1–40 characters.");
+      if(releaseNotes.length>1000)throw new Error("Release notes must be 1,000 characters or fewer.");
+      if(filePath!=="mission-up-stream-launcher.zip")throw new Error("The launcher package path is invalid.");
+      if(!fileName.toLowerCase().endsWith(".zip"))throw new Error("The launcher package must be a ZIP file.");
+      if(fileSize<1||fileSize>262144000)throw new Error("The launcher ZIP must be between 1 byte and 250 MB.");
+      const {data:objects,error:listError}=await db.storage.from("launcher-releases").list("",{search:filePath,limit:10});if(listError)throw listError;
+      if(!(objects??[]).some(file=>file.name===filePath))throw new Error("Upload the launcher ZIP before publishing its release details.");
+      const {data:before}=await db.from("launcher_releases").select("version_label,file_path,file_name,release_notes,file_size,updated_at").eq("singleton",true).maybeSingle();
+      const next={singleton:true,version_label:versionLabel,file_path:filePath,file_name:fileName,release_notes:releaseNotes,file_size:fileSize,updated_by:caller.id,updated_at:new Date().toISOString()};
+      const {error}=await db.from("launcher_releases").upsert(next);if(error)throw error;
+      await db.from("admin_audit").insert({admin_user_id:caller.id,player_id:null,action:"launcher_release_published",before_data:before,after_data:next,reason:"Launcher ZIP published through Admin Tools"});
+      return json({ok:true,release:next});
+    }
+
     const targetId=String(body.player_id??"");
     if(!targetId)throw new Error("Player ID is required.");
 
@@ -106,6 +122,19 @@ Deno.serve(async(req:Request)=>{
       const {error}=await db.from("profiles").update({must_change_password:true,updated_at:new Date().toISOString()}).eq("id",targetId);if(error)throw error;
       await db.from("admin_audit").insert({admin_user_id:caller.id,player_id:targetId,action:"password_reset",after_data:{temporary_password:true},reason:String(body.reason??"Forgotten password reset")});
       return json({ok:true,temporary_password:"Fish420"});
+    }
+
+    if(action==="admin_wipe_player_data"){
+      const reason=String(body.reason??"").trim();
+      if(reason.length<3)throw new Error("Enter a reason of at least 3 characters.");
+      const [{data:profile,error:profileError},{data:stats},{data:rewards}]=await Promise.all([
+        db.from("profiles").select("username").eq("id",targetId).single(),
+        db.from("player_stats").select("cash,xp,fish_caught,shiny_fish_caught,quests_completed,fish_sold,money_earned,money_spent,orbs_clicked,consumables_used,playtime_seconds").eq("player_id",targetId).maybeSingle(),
+        db.from("profile_rewards").select("daily_medals,tournament_trophies").eq("player_id",targetId).maybeSingle(),
+      ]);if(profileError)throw profileError;
+      const {data:result,error:wipeError}=await db.rpc("wipe_player_competitive_data_internal",{p_player_id:targetId});if(wipeError)throw wipeError;
+      await db.from("admin_audit").insert({admin_user_id:caller.id,player_id:targetId,action:"player_competitive_data_wiped",before_data:{username:profile.username,stats,rewards},after_data:{stats_reset:true,rewards_reset:true,...(result??{})},reason});
+      return json({ok:true,username:profile.username,...(result??{})});
     }
 
     if(action==="admin_delete_user"){
