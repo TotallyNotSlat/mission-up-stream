@@ -74,7 +74,9 @@ Deno.serve(async(req:Request)=>{
     if(action==="rsvp"){
       if(now>=startsAt)throw new Error("RSVPs close when the tournament begins.");
       if(entry?.state==="retired")throw new Error("Retired players cannot rejoin this tournament.");
-      const {error}=await db.from("tournament_entries").upsert({tournament_id:tournamentId,player_id:caller.id,state:"rsvp",baseline_value:null,score_value:0,retired_at:null,updated_at:now.toISOString()});if(error)throw error;
+      const {data:stats,error:statsError}=await db.from("player_stats").select("xp,fish_caught,shiny_fish_caught,quests_completed,fish_sold,money_earned,orbs_clicked,consumables_used").eq("player_id",caller.id).single();if(statsError)throw statsError;
+      const baseline=statValue(stats,tournament.metric);
+      const {error}=await db.from("tournament_entries").upsert({tournament_id:tournamentId,player_id:caller.id,state:"rsvp",baseline_value:baseline,score_value:0,retired_at:null,updated_at:now.toISOString()});if(error)throw error;
       return json({ok:true,state:"rsvp"});
     }
     if(action==="withdraw"){
@@ -93,7 +95,7 @@ Deno.serve(async(req:Request)=>{
     }
     if(action==="retire"){
       if(now<startsAt||now>=endsAt)throw new Error("Retirement is available only while the tournament is live.");
-      if(entry?.state!=="competing")throw new Error("Only competing players can retire.");
+      if(entry?.state!=="competing"&&entry?.state!=="rsvp")throw new Error("Only enrolled players can retire.");
       const {data:stats,error:statsError}=await db.from("player_stats").select("xp,fish_caught,shiny_fish_caught,quests_completed,fish_sold,money_earned,orbs_clicked,consumables_used").eq("player_id",caller.id).single();if(statsError)throw statsError;
       const score=Math.max(statValue(stats,tournament.metric)-Number(entry.baseline_value??0),0);
       const {error}=await db.from("tournament_entries").update({state:"retired",score_value:score,retired_at:now.toISOString(),updated_at:now.toISOString()}).eq("tournament_id",tournamentId).eq("player_id",caller.id);if(error)throw error;

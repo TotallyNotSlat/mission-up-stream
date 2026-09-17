@@ -51,6 +51,13 @@ Deno.serve(async(req:Request)=>{
       return json({ok:true});
     }
 
+    if(action==="update_my_status"){
+      const statusText=String(body.status_text??"").trim();
+      if(statusText.length>120)throw new Error("Status must be 120 characters or fewer.");
+      const {error}=await db.from("profiles").update({status_text:statusText,updated_at:new Date().toISOString()}).eq("id",caller.id);if(error)throw error;
+      return json({ok:true,status_text:statusText});
+    }
+
     const {data:adminRow}=await db.from("league_admins").select("user_id").eq("user_id",caller.id).maybeSingle();
     if(!adminRow)return json({error:"Administrator access is required."},403);
 
@@ -102,16 +109,36 @@ Deno.serve(async(req:Request)=>{
       const versionLabel=String(body.version_label??"").trim(),releaseNotes=String(body.release_notes??"").trim(),filePath=String(body.file_path??""),fileName=String(body.file_name??"").trim(),fileSize=Math.max(0,Math.trunc(Number(body.file_size??0)));
       if(versionLabel.length<1||versionLabel.length>40)throw new Error("The launcher version must be 1–40 characters.");
       if(releaseNotes.length>1000)throw new Error("Release notes must be 1,000 characters or fewer.");
-      if(filePath!=="mission-up-stream-launcher.zip")throw new Error("The launcher package path is invalid.");
+      if(!/^releases\/[0-9a-f-]{36}\.zip$/i.test(filePath))throw new Error("The launcher package path is invalid.");
       if(!fileName.toLowerCase().endsWith(".zip"))throw new Error("The launcher package must be a ZIP file.");
       if(fileSize<1||fileSize>262144000)throw new Error("The launcher ZIP must be between 1 byte and 250 MB.");
-      const {data:objects,error:listError}=await db.storage.from("launcher-releases").list("",{search:filePath,limit:10});if(listError)throw listError;
-      if(!(objects??[]).some(file=>file.name===filePath))throw new Error("Upload the launcher ZIP before publishing its release details.");
-      const {data:before}=await db.from("launcher_releases").select("version_label,file_path,file_name,release_notes,file_size,updated_at").eq("singleton",true).maybeSingle();
-      const next={singleton:true,version_label:versionLabel,file_path:filePath,file_name:fileName,release_notes:releaseNotes,file_size:fileSize,updated_by:caller.id,updated_at:new Date().toISOString()};
-      const {error}=await db.from("launcher_releases").upsert(next);if(error)throw error;
-      await db.from("admin_audit").insert({admin_user_id:caller.id,player_id:null,action:"launcher_release_published",before_data:before,after_data:next,reason:"Launcher ZIP published through Admin Tools"});
-      return json({ok:true,release:next});
+      const objectName=filePath.slice("releases/".length);
+      const {data:objects,error:listError}=await db.storage.from("launcher-releases").list("releases",{search:objectName,limit:10});if(listError)throw listError;
+      if(!(objects??[]).some(file=>file.name===objectName))throw new Error("Upload the launcher ZIP before publishing its release details.");
+      const next={version_label:versionLabel,file_path:filePath,file_name:fileName,release_notes:releaseNotes,file_size:fileSize,updated_by:caller.id};
+      const {data:release,error}=await db.from("launcher_releases").insert(next).select("id,version_label,file_path,file_name,release_notes,file_size,created_at,updated_at").single();if(error)throw error;
+      await db.from("admin_audit").insert({admin_user_id:caller.id,player_id:null,action:"launcher_release_published",after_data:release,reason:"Launcher ZIP published through Admin Tools"});
+      return json({ok:true,release});
+    }
+
+    if(action==="admin_update_launcher_release"){
+      const releaseId=String(body.release_id??""),versionLabel=String(body.version_label??"").trim(),releaseNotes=String(body.release_notes??"").trim();
+      if(!releaseId)throw new Error("Release ID is required.");
+      if(versionLabel.length<1||versionLabel.length>40)throw new Error("The launcher version must be 1–40 characters.");
+      if(releaseNotes.length>1000)throw new Error("Release notes must be 1,000 characters or fewer.");
+      const {data:before,error:beforeError}=await db.from("launcher_releases").select("*").eq("id",releaseId).single();if(beforeError)throw beforeError;
+      const {data:release,error}=await db.from("launcher_releases").update({version_label:versionLabel,release_notes:releaseNotes,updated_by:caller.id,updated_at:new Date().toISOString()}).eq("id",releaseId).select("id,version_label,file_path,file_name,release_notes,file_size,created_at,updated_at").single();if(error)throw error;
+      await db.from("admin_audit").insert({admin_user_id:caller.id,player_id:null,action:"launcher_release_updated",before_data:before,after_data:release,reason:"Launcher release post edited through Admin Tools"});
+      return json({ok:true,release});
+    }
+
+    if(action==="admin_delete_launcher_release"){
+      const releaseId=String(body.release_id??"");if(!releaseId)throw new Error("Release ID is required.");
+      const {data:release,error:releaseError}=await db.from("launcher_releases").select("*").eq("id",releaseId).single();if(releaseError)throw releaseError;
+      const {error:deleteError}=await db.from("launcher_releases").delete().eq("id",releaseId);if(deleteError)throw deleteError;
+      const {error:storageError}=await db.storage.from("launcher-releases").remove([release.file_path]);if(storageError)throw storageError;
+      await db.from("admin_audit").insert({admin_user_id:caller.id,player_id:null,action:"launcher_release_deleted",before_data:release,reason:"Launcher release deleted through Admin Tools"});
+      return json({ok:true,id:releaseId});
     }
 
     const targetId=String(body.player_id??"");

@@ -11,6 +11,9 @@ create table if not exists public.launcher_releases (
 
 alter table public.launcher_releases enable row level security;
 
+create index if not exists launcher_releases_updated_by_idx
+on public.launcher_releases(updated_by);
+
 drop policy if exists launcher_releases_read on public.launcher_releases;
 create policy launcher_releases_read
 on public.launcher_releases for select
