@@ -10,6 +10,7 @@ export type LivePlayer = {
 
 export type LeagueTitle = { id:string; key:string; label:string; description:string; canManageTournaments:boolean; isSystem:boolean };
 export type DailyChallenge = { date:string; categoryKey:string; label:string; scores:{playerId:string;score:number}[] };
+export type HomeContent = { headline:string; copy:string };
 
 const number = (value: unknown) => Number(value ?? 0);
 const playtime = (seconds: unknown) => { const mins=Math.max(0,Math.floor(number(seconds)/60)); return `${Math.floor(mins/60)}h ${String(mins%60).padStart(2,"0")}m`; };
@@ -49,6 +50,12 @@ export async function fetchLeagueTitles():Promise<LeagueTitle[]>{
   const {data,error}=await supabase.from("title_definitions").select("id,key,label,description,can_manage_tournaments,is_system").order("label");
   if(error)throw new Error(error.message);
   return (data??[]).map(row=>({id:row.id,key:row.key,label:row.label,description:row.description,canManageTournaments:Boolean(row.can_manage_tournaments),isSystem:Boolean(row.is_system)}));
+}
+
+export async function fetchHomeContent():Promise<HomeContent>{
+  const {data,error}=await supabase.from("league_settings").select("home_headline,home_copy").eq("singleton",true).single();
+  if(error)throw new Error(error.message);
+  return {headline:data.home_headline,copy:data.home_copy};
 }
 
 function easternDateKey(){

@@ -77,6 +77,27 @@ Deno.serve(async(req:Request)=>{
       return json({ok:true,title:created});
     }
 
+    if(action==="admin_delete_title"){
+      const titleId=String(body.title_id??"");
+      if(!titleId)throw new Error("Title ID is required.");
+      const {data:title,error:titleError}=await db.from("title_definitions").select("id,key,label,is_system,can_manage_tournaments").eq("id",titleId).single();if(titleError)throw titleError;
+      if(title.is_system||title.can_manage_tournaments||["admin","tourney_holder","fisherman","fisherwoman","fish"].includes(title.key))throw new Error("System, starter, and permission titles cannot be deleted.");
+      const {count:assignmentCount}=await db.from("player_titles").select("title_id",{count:"exact",head:true}).eq("title_id",titleId);
+      const {error:deleteError}=await db.from("title_definitions").delete().eq("id",titleId);if(deleteError)throw deleteError;
+      await db.from("admin_audit").insert({admin_user_id:caller.id,player_id:null,action:"title_deleted",before_data:{...title,assignment_count:assignmentCount??0},reason:String(body.reason??"Cosmetic title removed from catalog")});
+      return json({ok:true,label:title.label,removed_assignments:assignmentCount??0});
+    }
+
+    if(action==="admin_update_home"){
+      const headline=String(body.home_headline??"").trim(),copy=String(body.home_copy??"").trim();
+      if(headline.length<1||headline.length>100)throw new Error("The home headline must be 1–100 characters.");
+      if(copy.length<1||copy.length>300)throw new Error("The home description must be 1–300 characters.");
+      const {data:before}=await db.from("league_settings").select("home_headline,home_copy").eq("singleton",true).single();
+      const {error}=await db.from("league_settings").update({home_headline:headline,home_copy:copy,updated_at:new Date().toISOString()}).eq("singleton",true);if(error)throw error;
+      await db.from("admin_audit").insert({admin_user_id:caller.id,player_id:null,action:"home_content_updated",before_data:before,after_data:{home_headline:headline,home_copy:copy},reason:String(body.reason??"Home page content updated")});
+      return json({ok:true,home_headline:headline,home_copy:copy});
+    }
+
     const targetId=String(body.player_id??"");
     if(!targetId)throw new Error("Player ID is required.");
 
