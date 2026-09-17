@@ -33,9 +33,14 @@ Deno.serve(async(req:Request)=>{
       const next=normalizeUsername(body.username),bio=String(body.bio??"").trim(),statusText=String(body.status_text??"").trim();
       if(bio.length>500)throw new Error("Bio must be 500 characters or fewer.");
       if(statusText.length>120)throw new Error("Status must be 120 characters or fewer.");
-      const {data:collision}=await db.from("profiles").select("id").eq("username_normalized",next.normalized).neq("id",caller.id).maybeSingle();if(collision)throw new Error("That username is already in use.");
-      const {error:authError}=await db.auth.admin.updateUserById(caller.id,{email:next.email,user_metadata:{...caller.user_metadata,username:next.username,username_normalized:next.normalized}});if(authError)throw authError;
-      const {error}=await db.from("profiles").update({username:next.username,username_normalized:next.normalized,bio,status_text:statusText,updated_at:new Date().toISOString()}).eq("id",caller.id);if(error)throw error;
+      const {data:current,error:currentError}=await db.from("profiles").select("username_normalized").eq("id",caller.id).single();if(currentError)throw currentError;
+      if(current.username_normalized!==next.normalized){
+        const {data:collision}=await db.from("profiles").select("id").eq("username_normalized",next.normalized).neq("id",caller.id).maybeSingle();if(collision)throw new Error("That username is already in use.");
+        const {error:authError}=await db.auth.admin.updateUserById(caller.id,{email:next.email,user_metadata:{...caller.user_metadata,username:next.username,username_normalized:next.normalized}});if(authError)throw authError;
+      }
+      const titleId=body.active_title_id?String(body.active_title_id):null;
+      if(titleId){const {data}=await db.from("player_titles").select("title_id").eq("player_id",caller.id).eq("title_id",titleId).maybeSingle();if(!data)throw new Error("That title is not assigned to your account.");}
+      const {error}=await db.from("profiles").update({username:next.username,username_normalized:next.normalized,bio,status_text:statusText,active_title_id:titleId,updated_at:new Date().toISOString()}).eq("id",caller.id);if(error)throw error;
       return json({ok:true,username:next.username});
     }
 
@@ -60,6 +65,18 @@ Deno.serve(async(req:Request)=>{
       return json({ok:true,player_id:userId,username:next.username,temporary_password:"Fish420"});
     }
 
+    if(action==="admin_create_title"){
+      const label=String(body.label??"").trim(),description=String(body.description??"").trim();
+      if(label.length<2||label.length>40)throw new Error("Title names must be 2–40 characters.");
+      if(description.length>160)throw new Error("Title descriptions must be 160 characters or fewer.");
+      const key=label.toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"");
+      if(!key)throw new Error("Use at least one letter or number in the title name.");
+      if(["admin","tourney_holder"].includes(key))throw new Error("That title name is reserved.");
+      const {data:created,error}=await db.from("title_definitions").insert({key,label,description,can_manage_tournaments:false,is_system:false}).select("id,key,label,description").single();if(error){if(error.code==="23505")throw new Error("That title already exists.");throw error;}
+      await db.from("admin_audit").insert({admin_user_id:caller.id,player_id:null,action:"title_created",after_data:created,reason:String(body.reason??"Cosmetic title created")});
+      return json({ok:true,title:created});
+    }
+
     const targetId=String(body.player_id??"");
     if(!targetId)throw new Error("Player ID is required.");
 
@@ -68,6 +85,18 @@ Deno.serve(async(req:Request)=>{
       const {error}=await db.from("profiles").update({must_change_password:true,updated_at:new Date().toISOString()}).eq("id",targetId);if(error)throw error;
       await db.from("admin_audit").insert({admin_user_id:caller.id,player_id:targetId,action:"password_reset",after_data:{temporary_password:true},reason:String(body.reason??"Forgotten password reset")});
       return json({ok:true,temporary_password:"Fish420"});
+    }
+
+    if(action==="admin_delete_user"){
+      if(targetId===caller.id)throw new Error("You cannot delete your own account.");
+      const {data:targetAdmin}=await db.from("league_admins").select("user_id").eq("user_id",targetId).maybeSingle();
+      if(targetAdmin)throw new Error("Administrator accounts cannot be deleted here.");
+      const {data:before,error:beforeError}=await db.from("profiles").select("username").eq("id",targetId).single();if(beforeError)throw beforeError;
+      await db.from("admin_audit").insert({admin_user_id:caller.id,player_id:null,action:"account_deleted",before_data:{player_id:targetId,username:before.username},reason:String(body.reason??"Account deleted by administrator")});
+      const {data:files}=await db.storage.from("profile-images").list(targetId);
+      if(files?.length)await db.storage.from("profile-images").remove(files.map(file=>`${targetId}/${file.name}`));
+      const {error:deleteError}=await db.auth.admin.deleteUser(targetId);if(deleteError)throw deleteError;
+      return json({ok:true,username:before.username});
     }
 
     if(action==="admin_set_titles"){
@@ -93,11 +122,10 @@ Deno.serve(async(req:Request)=>{
       const next=normalizeUsername(body.username),bio=String(body.bio??"").trim(),statusText=String(body.status_text??"").trim();
       const medals=Math.max(0,Math.trunc(Number(body.daily_medals??0))),trophies=Math.max(0,Math.trunc(Number(body.tournament_trophies??0))),reason=String(body.reason??"").trim();
       if(reason.length<3)throw new Error("Enter a reason of at least 3 characters.");if(bio.length>500)throw new Error("Bio must be 500 characters or fewer.");if(statusText.length>120)throw new Error("Status must be 120 characters or fewer.");
-      const {data:before,error:beforeError}=await db.from("profiles").select("username,bio,status_text").eq("id",targetId).single();if(beforeError)throw beforeError;
+      const {data:before,error:beforeError}=await db.from("profiles").select("username,username_normalized,bio,status_text").eq("id",targetId).single();if(beforeError)throw beforeError;
       const {data:beforeReward}=await db.from("profile_rewards").select("daily_medals,tournament_trophies").eq("player_id",targetId).maybeSingle();
       const {data:collision}=await db.from("profiles").select("id").eq("username_normalized",next.normalized).neq("id",targetId).maybeSingle();if(collision)throw new Error("That username is already in use.");
-      const {data:targetUser,error:targetError}=await db.auth.admin.getUserById(targetId);if(targetError)throw targetError;
-      const {error:authError}=await db.auth.admin.updateUserById(targetId,{email:next.email,user_metadata:{...targetUser.user.user_metadata,username:next.username,username_normalized:next.normalized}});if(authError)throw authError;
+      if(before.username_normalized!==next.normalized){const {data:targetUser,error:targetError}=await db.auth.admin.getUserById(targetId);if(targetError)throw targetError;const {error:authError}=await db.auth.admin.updateUserById(targetId,{email:next.email,user_metadata:{...targetUser.user.user_metadata,username:next.username,username_normalized:next.normalized}});if(authError)throw authError;}
       const {error:profileError}=await db.from("profiles").update({username:next.username,username_normalized:next.normalized,bio,status_text:statusText,updated_at:new Date().toISOString()}).eq("id",targetId);if(profileError)throw profileError;
       const {error:rewardError}=await db.from("profile_rewards").upsert({player_id:targetId,daily_medals:medals,tournament_trophies:trophies,updated_at:new Date().toISOString()});if(rewardError)throw rewardError;
       await db.from("admin_audit").insert({admin_user_id:caller.id,player_id:targetId,action:"profile_update",before_data:{...before,...(beforeReward??{})},after_data:{username:next.username,bio,status_text:statusText,daily_medals:medals,tournament_trophies:trophies},reason});

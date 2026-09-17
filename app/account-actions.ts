@@ -15,7 +15,19 @@ export type MyProfile = {
 
 export async function callAccountAction(body: Record<string, unknown>) {
   const { data, error } = await supabase.functions.invoke("league-account", { body });
-  if (error) throw new Error(error.message);
+  if (error) {
+    let message = error.message;
+    const response = (error as { context?: Response }).context;
+    if (response) {
+      try {
+        const payload = await response.clone().json() as { error?: string };
+        if (payload.error) message = payload.error;
+      } catch {
+        // Keep the SDK's fallback message when the response is not JSON.
+      }
+    }
+    throw new Error(message);
+  }
   if (data?.error) throw new Error(String(data.error));
   return data;
 }

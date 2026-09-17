@@ -8,7 +8,8 @@ export type LivePlayer = {
   joinedAt: string; lastLoginAt: string | null; activeTitleId: string | null; activeTitle: string | null; titleIds: string[];
 };
 
-export type LeagueTitle = { id:string; key:string; label:string; description:string; canManageTournaments:boolean };
+export type LeagueTitle = { id:string; key:string; label:string; description:string; canManageTournaments:boolean; isSystem:boolean };
+export type DailyChallenge = { date:string; categoryKey:string; label:string; scores:{playerId:string;score:number}[] };
 
 const number = (value: unknown) => Number(value ?? 0);
 const playtime = (seconds: unknown) => { const mins=Math.max(0,Math.floor(number(seconds)/60)); return `${Math.floor(mins/60)}h ${String(mins%60).padStart(2,"0")}m`; };
@@ -45,9 +46,29 @@ export async function fetchLeaguePlayers(): Promise<LivePlayer[]> {
 }
 
 export async function fetchLeagueTitles():Promise<LeagueTitle[]>{
-  const {data,error}=await supabase.from("title_definitions").select("id,key,label,description,can_manage_tournaments").order("label");
+  const {data,error}=await supabase.from("title_definitions").select("id,key,label,description,can_manage_tournaments,is_system").order("label");
   if(error)throw new Error(error.message);
-  return (data??[]).map(row=>({id:row.id,key:row.key,label:row.label,description:row.description,canManageTournaments:Boolean(row.can_manage_tournaments)}));
+  return (data??[]).map(row=>({id:row.id,key:row.key,label:row.label,description:row.description,canManageTournaments:Boolean(row.can_manage_tournaments),isSystem:Boolean(row.is_system)}));
+}
+
+function easternDateKey(){
+  const parts=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());
+  const value=(type:string)=>parts.find(part=>part.type===type)?.value??"";
+  return `${value("year")}-${value("month")}-${value("day")}`;
+}
+
+export async function fetchTodayDailyChallenge():Promise<DailyChallenge|null>{
+  const date=easternDateKey();
+  const {data:challenge,error:challengeError}=await supabase.from("daily_challenges").select("challenge_date,category_key").eq("challenge_date",date).maybeSingle();
+  if(challengeError)throw new Error(challengeError.message);
+  if(!challenge)return null;
+  const [categoryResult,scoresResult]=await Promise.all([
+    supabase.from("daily_categories").select("label").eq("key",challenge.category_key).maybeSingle(),
+    supabase.from("daily_scores").select("player_id,score").eq("challenge_date",date).gt("score",0).order("score",{ascending:false}),
+  ]);
+  const error=categoryResult.error??scoresResult.error;
+  if(error)throw new Error(error.message);
+  return {date,categoryKey:challenge.category_key,label:categoryResult.data?.label??challenge.category_key,scores:(scoresResult.data??[]).map(row=>({playerId:row.player_id,score:Number(row.score??0)}))};
 }
 
 export async function fetchIsLeagueAdmin(userId: string): Promise<boolean> {
