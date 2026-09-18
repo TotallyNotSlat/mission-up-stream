@@ -146,6 +146,16 @@ Deno.serve(async(req:Request)=>{
     const targetId=String(body.player_id??"");
     if(!targetId)throw new Error("Player ID is required.");
 
+    if(action==="admin_disconnect_launcher"){
+      if(targetId===caller.id)throw new Error("Use the launcher itself to disconnect your own session.");
+      const {data:profile,error:profileError}=await db.from("profiles").select("username,launcher_access_version").eq("id",targetId).single();if(profileError)throw profileError;
+      const nextVersion=Math.max(0,Number(profile.launcher_access_version??0))+1;
+      const kickedAt=new Date().toISOString();
+      const {error}=await db.from("profiles").update({launcher_access_version:nextVersion,last_launcher_kick_at:kickedAt,presence:"offline",updated_at:kickedAt}).eq("id",targetId);if(error)throw error;
+      await db.from("admin_audit").insert({admin_user_id:caller.id,player_id:targetId,action:"launcher_disconnected",before_data:{launcher_access_version:profile.launcher_access_version},after_data:{launcher_access_version:nextVersion,last_launcher_kick_at:kickedAt},reason:String(body.reason??"Launcher disconnected by administrator")});
+      return json({ok:true,username:profile.username,launcher_access_version:nextVersion});
+    }
+
     if(action==="admin_reset_password"){
       const {error:authError}=await db.auth.admin.updateUserById(targetId,{password:"Fish420"});if(authError)throw authError;
       const {error}=await db.from("profiles").update({must_change_password:true,updated_at:new Date().toISOString()}).eq("id",targetId);if(error)throw error;

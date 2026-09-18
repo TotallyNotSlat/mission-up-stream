@@ -5,7 +5,7 @@ export type LivePlayer = {
   presence: "online" | "idle" | "offline";
   cash: number; fish: number; shinies: number; quests: number; xp: number;
   medals: number; trophies: number; favorite: string; playtime: string; avatarUrl: string | null;
-  joinedAt: string; lastLoginAt: string | null; activeTitleId: string | null; activeTitle: string | null; titleIds: string[];
+  joinedAt: string; lastLoginAt: string | null; lastSeenAt: string | null; activeTitleId: string | null; activeTitle: string | null; titleIds: string[];
 };
 
 export type LeagueTitle = { id:string; key:string; label:string; description:string; canManageTournaments:boolean; isSystem:boolean };
@@ -15,14 +15,18 @@ export type HomeContent = { headline:string; copy:string };
 const number = (value: unknown) => Number(value ?? 0);
 const playtime = (seconds: unknown) => { const mins=Math.max(0,Math.floor(number(seconds)/60)); return `${Math.floor(mins/60)}h ${String(mins%60).padStart(2,"0")}m`; };
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0,2).map(part=>part[0]).join("").toUpperCase() || "?";
+const effectivePresence=(presence:LivePlayer["presence"],lastSeenAt:string|null):LivePlayer["presence"]=>{
+  if(presence==="offline"||!lastSeenAt)return "offline";
+  return Date.now()-new Date(lastSeenAt).valueOf()>=60*60*1000?"offline":presence;
+};
 
 export async function fetchLeaguePlayers(): Promise<LivePlayer[]> {
-  type Profile={id:string;username:string;bio:string;status_text:string;presence:LivePlayer["presence"];avatar_path:string|null;created_at:string;last_login_at:string|null;active_title_id:string|null};
+  type Profile={id:string;username:string;bio:string;status_text:string;presence:LivePlayer["presence"];last_seen_at:string|null;avatar_path:string|null;created_at:string;last_login_at:string|null;active_title_id:string|null};
   type Stats={player_id:string;cash:number;xp:number;fish_caught:number;shiny_fish_caught:number;quests_completed:number;playtime_seconds:number};
   type Rewards={player_id:string;daily_medals:number;tournament_trophies:number};
   type Title={id:string;label:string}; type PlayerTitle={player_id:string;title_id:string};
   const [profilesResult,statsResult,rewardsResult,titlesResult,playerTitlesResult]=await Promise.all([
-    supabase.from("profiles").select("id,username,bio,status_text,presence,avatar_path,created_at,last_login_at,active_title_id").order("username"),
+    supabase.from("profiles").select("id,username,bio,status_text,presence,last_seen_at,avatar_path,created_at,last_login_at,active_title_id").order("username"),
     supabase.from("player_stats").select("player_id,cash,xp,fish_caught,shiny_fish_caught,quests_completed,playtime_seconds"),
     supabase.from("profile_rewards").select("player_id,daily_medals,tournament_trophies"),
     supabase.from("title_definitions").select("id,label"),
@@ -39,10 +43,10 @@ export async function fetchLeaguePlayers(): Promise<LivePlayer[]> {
   const titleById=new Map(titles.map(row=>[row.id,row.label]));
   const titleIdsByPlayer=new Map<string,string[]>();playerTitles.forEach(row=>titleIdsByPlayer.set(row.player_id,[...(titleIdsByPlayer.get(row.player_id)??[]),row.title_id]));
   return Promise.all(profiles.map(async profile=>{const stat=statsById.get(profile.id);const reward=rewardsById.get(profile.id);let avatarUrl:string|null=null;if(profile.avatar_path){const {data}=await supabase.storage.from("profile-images").createSignedUrl(profile.avatar_path,3600);avatarUrl=data?.signedUrl??null}return {
-    id:profile.id,name:profile.username,initials:initials(profile.username),bio:profile.bio||"No bio yet.",status:profile.status_text||"No current status.",presence:profile.presence??"offline",
+    id:profile.id,name:profile.username,initials:initials(profile.username),bio:profile.bio||"No bio yet.",status:profile.status_text||"No current status.",presence:effectivePresence(profile.presence??"offline",profile.last_seen_at),
     cash:number(stat?.cash),fish:number(stat?.fish_caught),shinies:number(stat?.shiny_fish_caught),quests:number(stat?.quests_completed),xp:number(stat?.xp),
     medals:number(reward?.daily_medals),trophies:number(reward?.tournament_trophies),favorite:"Not set",playtime:playtime(stat?.playtime_seconds),avatarUrl,
-    joinedAt:profile.created_at,lastLoginAt:profile.last_login_at,activeTitleId:profile.active_title_id,activeTitle:profile.active_title_id?titleById.get(profile.active_title_id)??null:null,titleIds:titleIdsByPlayer.get(profile.id)??[],
+    joinedAt:profile.created_at,lastLoginAt:profile.last_login_at,lastSeenAt:profile.last_seen_at,activeTitleId:profile.active_title_id,activeTitle:profile.active_title_id?titleById.get(profile.active_title_id)??null:null,titleIds:titleIdsByPlayer.get(profile.id)??[],
   }}));
 }
 
