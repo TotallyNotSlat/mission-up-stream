@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: mission-up-stream
+    runtime: static
+    buildCommand: pnpm install --frozen-lockfile && pnpm run build:render
+    staticPublishPath: ./out
+    domains:
+      - missionup.stream
+    envVars:
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        value: https://ytwfioxletcobzwiqdls.supabase.co
+      - key: NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+        value: sb_publishable_E3Dc83ue1idv888GncbwNA_vUXuBsLC
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
