@@ -152,6 +152,7 @@ Deno.serve(async(req:Request)=>{
       const nextVersion=Math.max(0,Number(profile.launcher_access_version??0))+1;
       const kickedAt=new Date().toISOString();
       const {error}=await db.from("profiles").update({launcher_access_version:nextVersion,last_launcher_kick_at:kickedAt,presence:"offline",updated_at:kickedAt}).eq("id",targetId);if(error)throw error;
+      await db.from("launcher_leases").delete().eq("player_id",targetId);
       await db.from("admin_audit").insert({admin_user_id:caller.id,player_id:targetId,action:"launcher_disconnected",before_data:{launcher_access_version:profile.launcher_access_version},after_data:{launcher_access_version:nextVersion,last_launcher_kick_at:kickedAt},reason:String(body.reason??"Launcher disconnected by administrator")});
       return json({ok:true,username:profile.username,launcher_access_version:nextVersion});
     }
@@ -184,6 +185,8 @@ Deno.serve(async(req:Request)=>{
       await db.from("admin_audit").insert({admin_user_id:caller.id,player_id:null,action:"account_deleted",before_data:{player_id:targetId,username:before.username},reason:String(body.reason??"Account deleted by administrator")});
       const {data:files}=await db.storage.from("profile-images").list(targetId);
       if(files?.length)await db.storage.from("profile-images").remove(files.map(file=>`${targetId}/${file.name}`));
+      const {data:cloudFiles}=await db.storage.from("cloud-saves").list(targetId,{limit:100});
+      if(cloudFiles?.length)await db.storage.from("cloud-saves").remove(cloudFiles.map(file=>`${targetId}/${file.name}`));
       const {error:deleteError}=await db.auth.admin.deleteUser(targetId);if(deleteError)throw deleteError;
       return json({ok:true,username:before.username});
     }
