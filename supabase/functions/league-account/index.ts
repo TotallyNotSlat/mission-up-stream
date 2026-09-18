@@ -30,9 +30,8 @@ Deno.serve(async(req:Request)=>{
     }
 
     if(action==="update_my_profile"){
-      const next=normalizeUsername(body.username),bio=String(body.bio??"").trim(),statusText=String(body.status_text??"").trim();
+      const next=normalizeUsername(body.username),bio=String(body.bio??"").trim();
       if(bio.length>500)throw new Error("Bio must be 500 characters or fewer.");
-      if(statusText.length>120)throw new Error("Status must be 120 characters or fewer.");
       const {data:current,error:currentError}=await db.from("profiles").select("username_normalized").eq("id",caller.id).single();if(currentError)throw currentError;
       if(current.username_normalized!==next.normalized){
         const {data:collision}=await db.from("profiles").select("id").eq("username_normalized",next.normalized).neq("id",caller.id).maybeSingle();if(collision)throw new Error("That username is already in use.");
@@ -40,7 +39,7 @@ Deno.serve(async(req:Request)=>{
       }
       const titleId=body.active_title_id?String(body.active_title_id):null;
       if(titleId){const {data}=await db.from("player_titles").select("title_id").eq("player_id",caller.id).eq("title_id",titleId).maybeSingle();if(!data)throw new Error("That title is not assigned to your account.");}
-      const {error}=await db.from("profiles").update({username:next.username,username_normalized:next.normalized,bio,status_text:statusText,active_title_id:titleId,updated_at:new Date().toISOString()}).eq("id",caller.id);if(error)throw error;
+      const {error}=await db.from("profiles").update({username:next.username,username_normalized:next.normalized,bio,active_title_id:titleId,updated_at:new Date().toISOString()}).eq("id",caller.id);if(error)throw error;
       return json({ok:true,username:next.username});
     }
 
