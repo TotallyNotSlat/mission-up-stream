@@ -65,7 +65,10 @@ Deno.serve(async(req:Request)=>{
       const {data:collision}=await db.from("profiles").select("id").eq("username_normalized",next.normalized).maybeSingle();if(collision)throw new Error("That username is already in use.");
       const {data:created,error:createError}=await db.auth.admin.createUser({email:next.email,password:"Fish420",email_confirm:true,user_metadata:{username:next.username,username_normalized:next.normalized}});if(createError)throw createError;
       const userId=created.user.id;
-      const {error:profileError}=await db.from("profiles").insert({id:userId,username:next.username,username_normalized:next.normalized,must_change_password:true});
+      // The auth.users signup trigger creates the profile and starter companion rows.
+      // Upsert here so admin-created accounts finish configuring that row instead of
+      // failing on a duplicate primary key and deleting the newly created Auth user.
+      const {error:profileError}=await db.from("profiles").upsert({id:userId,username:next.username,username_normalized:next.normalized,must_change_password:true,updated_at:new Date().toISOString()},{onConflict:"id"});
       if(profileError){await db.auth.admin.deleteUser(userId);throw profileError;}
       await db.from("admin_audit").insert({admin_user_id:caller.id,player_id:userId,action:"account_created",after_data:{username:next.username},reason:String(body.reason??"Player invited by administrator")});
       return json({ok:true,player_id:userId,username:next.username,temporary_password:"Fish420"});
